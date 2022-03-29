@@ -1,8 +1,11 @@
-﻿using UnityEngine;
+﻿using System;
+using UnityEngine;
 
-[ExecuteInEditMode, ImageEffectAllowedInSceneView]
+[ImageEffectAllowedInSceneView]
 public class FractalMaster : MonoBehaviour {
 
+    public GameObject LeftHandPos;
+    public GameObject RightHandPos;
     public ComputeShader fractalShader;
 
     [Range (1, 20)]
@@ -23,7 +26,7 @@ public class FractalMaster : MonoBehaviour {
     Light directionalLight;
 
     [Header ("Animation Settings")]
-    public float powerIncreaseSpeed = 0.2f;
+    public float powerIncreaseSpeed = 1.2f;
 
     void Start() {
         Application.targetFrameRate = 60;
@@ -36,9 +39,7 @@ public class FractalMaster : MonoBehaviour {
 
     // Animate properties
     void Update () {
-        if (Application.isPlaying) {
-            fractalPower += powerIncreaseSpeed * Time.deltaTime;
-        }
+            fractalPower += powerIncreaseSpeed*Time.deltaTime;
     }
 
     void OnRenderImage (RenderTexture source, RenderTexture destination) {
@@ -55,7 +56,7 @@ public class FractalMaster : MonoBehaviour {
 
     void SetParameters () {
         fractalShader.SetTexture (0, "Destination", target);
-        fractalShader.SetFloat ("power", Mathf.Max (fractalPower, 1.01f));
+        fractalShader.SetFloat ("power", (Mathf.Sin(fractalPower)*0.5f+0.5f)*3.0f+5.0f);
         fractalShader.SetFloat ("darkness", darkness);
         fractalShader.SetFloat ("blackAndWhite", blackAndWhite);
         fractalShader.SetVector ("colourAMix", new Vector3 (redA, greenA, blueA));
@@ -63,7 +64,10 @@ public class FractalMaster : MonoBehaviour {
 
         fractalShader.SetMatrix ("_CameraToWorld", cam.cameraToWorldMatrix);
         fractalShader.SetMatrix ("_CameraInverseProjection", cam.projectionMatrix.inverse);
-        fractalShader.SetVector ("_LightDirection", directionalLight.transform.forward);
+        fractalShader.SetVector("_LightDirection", directionalLight.transform.forward);
+
+        fractalShader.SetVector("_LeftHandPos", LeftHandPos.transform.position);
+        fractalShader.SetVector("_RightHandPos", RightHandPos.transform.position);
 
     }
 

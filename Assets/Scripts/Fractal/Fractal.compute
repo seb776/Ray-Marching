@@ -6,6 +6,9 @@ float4x4 _CameraToWorld;
 float4x4 _CameraInverseProjection;
 float3 _LightDirection;
 
+float3 _LeftHandPos;
+float3 _RightHandPos;
+
 float power;
 float darkness;
 float blackAndWhite;
@@ -20,6 +23,12 @@ struct Ray {
     float3 origin;
     float3 direction;
 };
+
+
+float opSmoothUnion(float d1, float d2, float k) {
+    float h = clamp(0.5 + 0.5 * (d2 - d1) / k, 0.0, 1.0);
+    return lerp(d2, d1, h) - k * h * (1.0 - h);
+}
 
 Ray CreateRay(float3 origin, float3 direction) {
     Ray ray;
@@ -67,7 +76,12 @@ float2 SceneInfo(float3 position) {
 		z+=position;
 	}
     float dst = 0.5*log(r)*r/dr;
-	return float2(iterations,dst*1);
+
+    //dst = min(dst, length(position - _LeftHandPos) - 0.1f);
+    //dst = min(dst, length(position - _RightHandPos) - 0.1f);
+    dst = opSmoothUnion(dst, length(position - _LeftHandPos) - 0.1f, 0.2f);
+    dst = opSmoothUnion(dst, length(position - _RightHandPos) - 0.1f, 0.2f);
+    return float2(iterations,dst*1);
 }
 
 float3 EstimateNormal(float3 p) {
@@ -92,11 +106,11 @@ void CSMain (uint3 id : SV_DispatchThreadID)
     Ray ray = CreateCameraRay(uv * 2 - 1);
     float rayDst = 0;
     int marchSteps = 0;
-
+    float4 accCol = float4(0.,0.,0.,0.);
     while (rayDst < maxDst && marchSteps < maxStepCount) {
         marchSteps ++;
         float2 sceneInfo = SceneInfo(ray.origin);
-        float dst = sceneInfo.y;
+        float dst = sceneInfo.y;// +.25;
         
         // Ray has hit a surface
         if (dst <= epsilon) {
@@ -110,10 +124,11 @@ void CSMain (uint3 id : SV_DispatchThreadID)
             result = float4(colourMix.xyz,1);
             break;
         }
+        accCol.xyz += float3(1., 1., 1.) * (1. - saturate(dst / .5))*.02;
         ray.origin += ray.direction * dst;
         rayDst += dst;
     }
 
     float rim = marchSteps/darkness;
-    Destination[id.xy] = lerp(result, 1, blackAndWhite) * rim;
+    Destination[id.xy] = lerp(result, 1, blackAndWhite) * rim;// +accCol;
 }

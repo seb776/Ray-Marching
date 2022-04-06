@@ -19,6 +19,8 @@ static const float epsilon = 0.001f;
 static const float maxDst = 200;
 static const int maxStepCount = 250;
 
+float4 _Bubbles[15];
+
 struct Ray {
     float3 origin;
     float3 direction;
@@ -48,6 +50,7 @@ Ray CreateCameraRay(float2 uv) {
 // Mandelbulb distance estimation:
 // http://blog.hvidtfeldts.net/index.php/2011/09/distance-estimated-3d-fractals-v-the-mandelbulb-different-de-approximations/
 float2 SceneInfo(float3 position) {
+    /*
     float3 z = position;
 	float dr = 1.0;
 	float r = 0.0;
@@ -76,12 +79,18 @@ float2 SceneInfo(float3 position) {
 		z+=position;
 	}
     float dst = 0.5*log(r)*r/dr;
-
+    */
+        float dst = 10000.f;
+        for (int i = 0; i < 15; ++i)
+        {
+            dst = opSmoothUnion(dst, length(position - _Bubbles[i].xyz) - 0.1f, 0.02f);
+        }
     //dst = min(dst, length(position - _LeftHandPos) - 0.1f);
     //dst = min(dst, length(position - _RightHandPos) - 0.1f);
-    dst = opSmoothUnion(dst, length(position - _LeftHandPos) - 0.1f, 0.2f);
-    dst = opSmoothUnion(dst, length(position - _RightHandPos) - 0.1f, 0.2f);
-    return float2(iterations,dst*1);
+    dst = opSmoothUnion(dst, length(position - _LeftHandPos) - 0.1f, 0.05f);
+    dst = opSmoothUnion(dst, length(position - _RightHandPos) - 0.1f, 0.05f);
+    return float2(1, dst * 1);
+    //return float2(iterations, dst * 1);
 }
 
 float3 EstimateNormal(float3 p) {

@@ -1,3 +1,7 @@
+# Edit
+Made it work in VR with Oculus SDK
+Current version shows bubbles with morphing style
+
 # Ray Marching
 Experimenting with using ray marching to render signed distance functions in Unity.
 This is just a test project, so beware! It is very unoptimized and incomplete.

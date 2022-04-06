@@ -8,6 +8,8 @@ public class FractalMaster : MonoBehaviour {
     public GameObject RightHandPos;
     public ComputeShader fractalShader;
 
+    public GameObject BubblesParent;
+
     [Range (1, 20)]
     public float fractalPower = 10;
     public float darkness = 70;
@@ -30,7 +32,10 @@ public class FractalMaster : MonoBehaviour {
 
     void Start() {
         Application.targetFrameRate = 60;
+        _bubbles = new Vector4[BubblesParent.transform.childCount];
     }
+
+    Vector4[] _bubbles;
     
     void Init () {
         cam = Camera.current;
@@ -69,6 +74,14 @@ public class FractalMaster : MonoBehaviour {
         fractalShader.SetVector("_LeftHandPos", LeftHandPos.transform.position);
         fractalShader.SetVector("_RightHandPos", RightHandPos.transform.position);
 
+        int i = 0;
+        foreach (Transform child in BubblesParent.transform)
+        {
+            _bubbles[i] = child.position;
+            i++;
+        }    
+
+        fractalShader.SetVectorArray("_Bubbles", _bubbles);
     }
 
     void InitRenderTexture () {

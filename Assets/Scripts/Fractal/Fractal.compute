@@ -20,6 +20,8 @@ static const float maxDst = 200;
 static const int maxStepCount = 250;
 
 float4 _Bubbles[15];
+float4 _Time;
+float4 _AudioSamples[128];
 
 struct Ray {
     float3 origin;
@@ -45,6 +47,12 @@ Ray CreateCameraRay(float2 uv) {
     direction = mul(_CameraToWorld, float4(direction,0)).xyz;
     direction = normalize(direction);
     return CreateRay(origin,direction);
+}
+
+float _cube(float3 p, float3 s)
+{
+    float3 l = abs(p) - s;
+    return max(l.x, max(l.y, l.z));
 }
 
 // Mandelbulb distance estimation:
@@ -80,15 +88,28 @@ float2 SceneInfo(float3 position) {
 	}
     float dst = 0.5*log(r)*r/dr;
     */
+
+
         float dst = 10000.f;
         for (int i = 0; i < 15; ++i)
         {
             dst = opSmoothUnion(dst, length(position - _Bubbles[i].xyz) - 0.1f, 0.02f);
         }
+
     //dst = min(dst, length(position - _LeftHandPos) - 0.1f);
     //dst = min(dst, length(position - _RightHandPos) - 0.1f);
     dst = opSmoothUnion(dst, length(position - _LeftHandPos) - 0.1f, 0.05f);
     dst = opSmoothUnion(dst, length(position - _RightHandPos) - 0.1f, 0.05f);
+    float3 p2 = position;
+    p2.x = abs(p2.x);
+    p2 = p2 - float3(1., 0., 0.);
+    float rep = 1.;
+    float zz = p2.z + _Time.y*5.;
+    p2.z = fmod(zz + rep * .5, rep) - rep * .5;
+    int idx = int(floor((zz + rep * .5) / rep));
+    idx = idx%128;
+    float cubes = _cube(p2, float2(.1, _AudioSamples[idx].x).xyx);
+        dst = min(dst, cubes);
     return float2(1, dst * 1);
     //return float2(iterations, dst * 1);
 }
@@ -134,7 +155,7 @@ void CSMain (uint3 id : SV_DispatchThreadID)
             break;
         }
         accCol.xyz += float3(1., 1., 1.) * (1. - saturate(dst / .5))*.02;
-        ray.origin += ray.direction * dst;
+        ray.origin += ray.direction * dst*.5;
         rayDst += dst;
     }
 

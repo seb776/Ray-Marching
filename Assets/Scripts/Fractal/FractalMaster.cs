@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Linq;
 using UnityEngine;
 
 [ImageEffectAllowedInSceneView]
@@ -7,6 +8,7 @@ public class FractalMaster : MonoBehaviour {
     public GameObject LeftHandPos;
     public GameObject RightHandPos;
     public ComputeShader fractalShader;
+    public TestMicDecode MicDecode;
 
     public GameObject BubblesParent;
 
@@ -60,7 +62,7 @@ public class FractalMaster : MonoBehaviour {
     }
 
     void SetParameters () {
-        fractalShader.SetTexture (0, "Destination", target);
+        fractalShader.SetTexture(0, "Destination", target);
         fractalShader.SetFloat ("power", (Mathf.Sin(fractalPower)*0.5f+0.5f)*3.0f+5.0f);
         fractalShader.SetFloat ("darkness", darkness);
         fractalShader.SetFloat ("blackAndWhite", blackAndWhite);
@@ -73,6 +75,9 @@ public class FractalMaster : MonoBehaviour {
 
         fractalShader.SetVector("_LeftHandPos", LeftHandPos.transform.position);
         fractalShader.SetVector("_RightHandPos", RightHandPos.transform.position);
+        fractalShader.SetVector("_Time", Shader.GetGlobalVector("_Time"));
+        Debug.Log("samplesCount " + MicDecode._smoothedSamples.Length);
+        fractalShader.SetVectorArray("_AudioSamples", MicDecode._smoothedSamples.Select(el => new Vector4(el, el, el, el)).ToArray());
 
         int i = 0;
         foreach (Transform child in BubblesParent.transform)

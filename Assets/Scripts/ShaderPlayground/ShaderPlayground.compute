@@ -52,6 +52,25 @@ Ray CreateRay(float3 origin, float3 direction) {
 	return ray;
 }
 
+float hash11(float seed)
+{
+	return frac(sin(seed * 123.456) * 123.456);
+}
+
+// Thanks IQ
+float hash1(float2 p)
+{
+	p = 50.0 * frac(p * 0.3183099);
+	return frac(p.x * p.y * (p.x + p.y));
+}
+
+float _seed;
+float rand()
+{
+	return hash11(_seed++);
+}
+
+
 Ray CreateCameraRay(float2 uv) {
 	float3 origin = mul(_CameraToWorld, float4(0, 0, 0, 1)).xyz;
 	float3 direction = mul(_CameraInverseProjection, float4(uv, 0, 1)).xyz;
@@ -81,15 +100,10 @@ float _cube(float3 p, float3 s)
 float2 map(float3 p)
 {
 	float2 acc = float2(10000.f,-1.0f);
-	float rep2 = 2.5;
-	p.xy = mul(p.xy, r2d(.2*p.z));
-	p.z += _Time.y;
-	float3 id = floor((p + 10 + rep2 * .5) / rep2);
-	float sz = .5*(sin(length(id)+_Time.z*.3)*.5+.5);
-	p = fmod(p +10+ rep2 * .5, rep2) - rep2 * .5;
-	//p.xy*=r2d(iTime+p.z);
-	float th = .02;
-	acc = float2(_cucube(p, float3(sz,sz,sz), float3(th, th, th)), id.z);
+
+	acc = _min(acc, float2(-_cube(p, float3(2., 2., 15.)), 0.));
+	acc = _min(acc, float2(_cube(p-float3(0.,0.,4.5), float3(2., 2., .1)), 1.));
+	acc = _min(acc, float2(length(p - float3(sin(_Time.y), sin(_Time.y*2.)*.5+.5, 3.5-(sin(_Time.y*3.3) * .5 + .5)))-.5, 2.));
 	return acc;
 	for (int i2 = 0; i2 < 7; ++i2)
 	{
@@ -149,6 +163,15 @@ float3 trace(float3 ro, float3 rd, int steps)
 	return float3(-1.,-1.,-1.);
 }
 
+float3 getMat(float3 p, float3 n, float3 rd, float3 res)
+{
+	if (res.z == 1.)
+		return float3(1., 0., 0.);
+	if (res.z == 2.)
+		return float3(0., 0., 1.) * saturate(sin(p.y * 10. + _Time.y) * 10.);
+	return float3(0., 0., 0.);
+}
+
 float3 rdr(float2 uv)
 {
 	float3 col = float3(0.,0.,0.);
@@ -161,11 +184,22 @@ float3 rdr(float2 uv)
 	float3 res = trace(ro, rd, 256);
 	if (res.y > 0.)
 	{
-		float3 n = getNorm(ro, res.x);
-		//col = n * .5 + .5;
-		//col = float3(1., 0., 0.);
+		float3 p = ro + res.y * rd;
+		float3 n = getNorm(p, res.x);
+		col = getMat(p, n, rd, res);
+		
+		float3 refl = normalize(reflect(rd, n) + 0.05 * normalize(float3(rand(), rand(), rand()) - .5));
+
+		float3 resrefl = trace(p + n * 0.01, refl, 128);
+		if (resrefl.y > 0.)
+		{
+			float3 prefl = p + refl * resrefl.y;
+
+			col += getMat(prefl, 0, 0, resrefl);
+		}
+
 	}
-	col += accCol;
+	//col += accCol;
 
 	return col;
 }
@@ -177,10 +211,10 @@ void CSMain(uint3 id : SV_DispatchThreadID)
 	Destination.GetDimensions(width, height);
 
 	float2 uv = id.xy / float2(width, height);
-
+	_seed =hash1(uv)+_Time.y;
 	// Background gradient
 	float3 col = rdr(uv);
-
+	//col += rand();
 	//col = float3(1., 1., 1.)*(1. - saturate((length(uv) - .5)*100.));
 	Destination[id.xy] = float4(col, 1.0);
 }

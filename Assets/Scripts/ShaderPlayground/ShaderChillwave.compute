@@ -1,0 +1,248 @@
+#pragma kernel CSMain
+
+RWTexture2D<float4> Destination;
+
+float4x4 _CameraToWorld;
+float4x4 _CameraInverseProjection;
+float3 _LightDirection;
+
+float3 _LeftHandPos;
+float3 _RightHandPos;
+
+float power;
+float darkness;
+float blackAndWhite;
+float3 colourAMix;
+float3 colourBMix;
+
+static const float epsilon = 0.001f;
+static const float maxDst = 200;
+static const int maxStepCount = 250;
+
+float4 _Bubbles[15];
+float4 _Time;
+float4 _AudioSamples[128];
+#define FFT(a) _AudioSamples[int(fmod(a,1.)*127)].x
+#define PI 3.14159265
+
+struct Ray {
+	float3 origin;
+	float3 direction;
+};
+
+float2x2 r2d(float a) {
+	float s = sin(a);
+	float c = cos(a);
+	return float2x2(c, s, -s, c);
+}
+
+float2 _min(float2 a, float2 b)
+{
+	if (a.x < b.x)
+		return a;
+	return b;
+}
+float opSmoothUnion(float d1, float d2, float k) {
+	float h = clamp(0.5 + 0.5 * (d2 - d1) / k, 0.0, 1.0);
+	return lerp(d2, d1, h) - k * h * (1.0 - h);
+}
+
+Ray CreateRay(float3 origin, float3 direction) {
+	Ray ray;
+	ray.origin = origin;
+	ray.direction = direction;
+	return ray;
+}
+
+float hash11(float seed)
+{
+	return frac(sin(seed * 123.456) * 123.456);
+}
+
+// Thanks IQ
+float hash1(float2 p)
+{
+	p = 50.0 * frac(p * 0.3183099);
+	return frac(p.x * p.y * (p.x + p.y));
+}
+
+float _seed;
+float rand()
+{
+	return hash11(_seed++);
+}
+
+
+Ray CreateCameraRay(float2 uv) {
+	float3 origin = mul(_CameraToWorld, float4(0, 0, 0, 1)).xyz;
+	float3 direction = mul(_CameraInverseProjection, float4(uv, 0, 1)).xyz;
+	direction = mul(_CameraToWorld, float4(direction, 0)).xyz;
+	direction = normalize(direction);
+	return CreateRay(origin, direction);
+}
+
+float _cucube(float3 p, float3 s, float3 th)
+{
+	float3 l = abs(p) - s;
+	float cube = max(max(l.x, l.y), l.z);
+	l = abs(l) - th;
+	float x = max(l.y, l.z);
+	float y = max(l.x, l.z);
+	float z = max(l.x, l.y);
+
+	return max(min(min(x, y), z), cube);
+}
+
+float _cube(float3 p, float3 s)
+{
+	float3 l = abs(p) - s;
+	return max(l.x, max(l.y, l.z));
+}
+
+float2 map(float3 p)
+{
+	float2 acc = float2(10000., -1.);
+	//acc = _min(acc, float2(length(p)-2., 0.));
+	acc = _min(acc, float2(-p.y, 0.));
+	return acc;
+}
+float3 getEnv(float3 rd)
+{
+	rd.xy = mul(rd.xy, r2d(.5));
+	float2 uv = float2(atan2(rd.z, rd.x) / PI, (acos(rd.y) / PI - .5) * 2.);
+	float gradf = 3.;
+	float3 up = lerp(float3(0.161, 0.055, 0.239), float3(0.639, 0.059, 0.341), saturate(uv.y * gradf));
+	float3 low = lerp(float3(0.161, 0.055, 0.239), float3(0.157, 0.345, 0.337), saturate(-uv.y * gradf));
+	float3 back = lerp(low, up, (float)(uv.y > 0. ? low : up));
+
+	float stars = pow(texture(iChannel2, uv * 4.).x, 10.);
+	float stars = hash1(uv);// pow(texture(iChannel2, uv * 4.).x, 10.);
+
+	uv.x *= 1.75;
+	float an = atan(uv.y, uv.x);
+	back += (.35 * float3(0.945, 0.220, 0.310) * saturate(sin(an * 12.) + .8)) * (1. - saturate(length(uv * 2.))) +
+		.5 * float3(0.945, 0.263, 0.216) * saturate(sin(an * 7. + 1.) + .7) * (1. - saturate(length(uv * 1.5))) +
+		.5 * float3(1.000, 0.533, 0.502) * saturate(sin(an * 5.) + .5) * (1. - saturate(length(uv * 1.)));
+
+	float rep = 0.05;
+	float2 uv2 = uv - float2(0., 0.05);
+	uv2 *= 1.5;
+	float id = floor((uv2.x + rep * .5) / rep);
+	uv2.x = fmod(uv2.x + rep * .5, rep) - rep * .5;
+	float height = pow(FFT(abs(id * .01)), 1.) * .8;
+	float shape = max(abs(uv2.y) - height, abs(uv2.x) - 0.001);
+	float3 rgbs = lerp(float3(0.208, 0.675, 0.431) * 0., float3(0.180 + sin(id + iTime) * .5 + .5, 0.820, 0.659 + sin(-id + iTime) * .5 + .5), saturate((abs(uv2.y)) * 10.));
+	back += rgbs * (1. - saturate(shape * 400.)) * (1. - saturate(abs(uv.x * 2.) - .5));
+
+	float psz = .3;
+	float planet = length(uv) - psz;
+	float3 col = back + stars * float3(0.580, 0.804, 0.820) * .5;
+	float3 planetrgb = float3(0.161, 0.055, 0.239) * .75
+		+ float3(0.961, 0.000, 0.192) * pow(texture(iChannel1, uv * 5. * length(uv)).x, 3.) * saturate(uv.y * 5.);
+	planetrgb += float3(1.000, 0.173, 0.078) * (1. - saturate((abs(planet) - .001) * 50.)) * saturate(uv.y * 5.);
+	col = lerp(col, planetrgb, 1. - saturate(planet * 400.));
+
+	col += .5 * float3(1.000, 0.173, 0.078) * (1. - saturate((abs(planet) - .01) * 20.)) * saturate(uv.y * 5.);
+	col += float3(1.000, 0.314, 0.141) * (1. - saturate(planet * 100.)) * .15;
+
+	col += .25 * rgbs * (1. - saturate(shape * 10.)) * (1. - saturate(abs(uv.x * 2.) - .5)) * saturate(planet * 10.);
+
+	return col;
+}
+float3 getNorm(float3 p, float d)
+{
+	float2 e = float2(0.01, 0.);
+	return normalize(float3(d,d,d)-float3(map(p - e.xyy).x, map(p - e.yxy).x, map(p - e.yyx).x));
+}
+float3 accCol;
+float3 trace(float3 ro, float3 rd, int steps)
+{
+	accCol = float3(0., 0., 0.);
+	float3 p = ro;
+	for (int i = 0; i < steps && distance(p, ro) < 15.; ++i)
+	{
+		float2 res = map(p);
+		if (res.x < 0.001)
+			return float3(res.x, distance(p, ro), res.y);
+		accCol += float3(1., .1, sin(p.y)*.5+.5)*(1. - saturate(res.x / .2))*.02*(pow(_AudioSamples[int(res.y)%128].x,.8)+.5);
+		p += rd * res.x;
+	}
+	return float3(-1.,-1.,-1.);
+}
+
+float3 getMat(float3 p, float3 n, float3 rd, float3 res)
+{
+	if (res.z == 1.)
+		return float3(1., 0., 0.);
+	if (res.z == 2.)
+		return float3(0., 0., 1.) * saturate(sin(p.y * 10. + _Time.y) * 10.);
+	return float3(0., 0., 0.);
+}
+
+float3 rdr(float2 uv)
+{
+	float3 col = float3(0.);
+
+	float t = 4.68;
+	float3 ro = float3(sin(t) * 5., -1.5 + sin(iTime * .25) * .2, cos(t) * 5. + sin(iTime * .25));
+	float3 ta = float3(0., -2., 0.);
+	float3 rd = normalize(ta - ro);
+
+	rd = getCam(rd, uv);
+	float d = 100.;
+	float3 res = trace(ro, rd, 128);
+
+	if (res.y > 0.)
+	{
+		d = res.y;
+		float3 p = ro + rd * res.y;
+		float3 n = getNorm(p, res.x);
+		col = getMat(res, rd, p, n);
+		float move = p.x + iTime;
+		float river = (abs(p.z - sin(move * 1.) * .5 - sin(move * .5) * 2.) - 1.5);
+		float spec = lerp(.25, 1., 1. - saturate(river * 400.));
+		float gloss = lerp(.5, .05, 1. - saturate(river * 400.));
+		float3 refl = normalize(reflect(rd, n) + gloss * (float3(rand(), rand(), rand()) - .5));
+		float3 resrefl = trace(p + n * 0.01, refl, 256);
+		float3 reflec = float3(0.);
+		float gridrep = 1.;
+		float2 griduv = float2(move, p.z);
+		griduv = mod(griduv + gridrep * .5, gridrep) - gridrep * .5;
+		float gridth = .001;
+		float grid = min(abs(griduv.x) - gridth, abs(griduv.y) - gridth);
+		col += saturate(river * 400.) * float3(0.220, 0.800, 0.412) * (1. - saturate(grid * 40.)) * (1. - saturate(res.y / 10.));
+		if (resrefl.y > 0.)
+		{
+			float3 prefl = p + refl * resrefl.y;
+			float3 nrefl = getNorm(prefl, resrefl.x);
+
+			reflec = getMat(resrefl, refl, prefl, nrefl);
+		}
+		else
+			reflec = getEnv(refl);
+		col += reflec * spec;
+	}
+	else
+		col = getEnv(rd);
+	col += float3(0.816, 0.541, 1.000) * (1. - saturate(exp(-d * 0.2 + .5))) * saturate(rd.y * 1. + .5);
+	col += float3(1.000, 0.314, 0.141) * (1. - saturate(exp(-d * 0.2 + 1.5))) * saturate(rd.y * 3. + .5);
+
+	col += float3(0.302, 0.698, 1.000) * pow(1. - saturate(abs((rd.y - .05) * 15.)), 2.) * (1. - saturate(abs(rd.z)));
+
+	return col;
+}
+
+[numthreads(8, 8, 1)]
+void CSMain(uint3 id : SV_DispatchThreadID)
+{
+	uint width, height;
+	Destination.GetDimensions(width, height);
+
+	float2 uv = id.xy / float2(width, height);
+	_seed =hash1(uv)+_Time.y;
+	// Background gradient
+	float3 col = rdr(uv);
+	//col += rand();
+	//col = float3(1., 1., 1.)*(1. - saturate((length(uv) - .5)*100.));
+	Destination[id.xy] = float4(col, 1.0);
+}

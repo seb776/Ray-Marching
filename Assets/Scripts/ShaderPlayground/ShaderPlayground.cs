@@ -25,6 +25,7 @@ public class ShaderPlayground : MonoBehaviour {
     [Range (0, 1)] public float blueB;
 
     RenderTexture target;
+    public Texture2D Concrete;
     Camera cam;
     Light directionalLight;
 
@@ -62,6 +63,7 @@ public class ShaderPlayground : MonoBehaviour {
 
     void SetParameters () {
         fractalShader.SetTexture(0, "Destination", target);
+        fractalShader.SetTexture(0, "Concrete", Concrete);
         fractalShader.SetFloat ("power", (Mathf.Sin(fractalPower)*0.5f+0.5f)*3.0f+5.0f);
         fractalShader.SetFloat ("darkness", darkness);
         fractalShader.SetFloat ("blackAndWhite", blackAndWhite);

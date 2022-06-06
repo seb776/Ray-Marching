@@ -1,0 +1,239 @@
+#pragma kernel CSMain
+
+RWTexture2D<float4> Destination;
+Texture2D Concrete;
+SamplerState samplerConcrete;
+
+float4x4 _CameraToWorld;
+float4x4 _CameraInverseProjection;
+float3 _LightDirection;
+
+float3 _LeftHandPos;
+float3 _RightHandPos;
+
+float power;
+float darkness;
+float blackAndWhite;
+float3 colourAMix;
+float3 colourBMix;
+
+static const float epsilon = 0.001f;
+static const float maxDst = 200;
+static const int maxStepCount = 250;
+
+float4 _Bubbles[15];
+float4 _Time;
+float4 _AudioSamples[128];
+
+struct Ray {
+	float3 origin;
+	float3 direction;
+};
+
+float2x2 r2d(float a) {
+	float s = sin(a);
+	float c = cos(a);
+	return float2x2(c, s, -s, c);
+}
+
+float2 _min(float2 a, float2 b)
+{
+	if (a.x < b.x)
+		return a;
+	return b;
+}
+float opSmoothUnion(float d1, float d2, float k) {
+	float h = clamp(0.5 + 0.5 * (d2 - d1) / k, 0.0, 1.0);
+	return lerp(d2, d1, h) - k * h * (1.0 - h);
+}
+
+Ray CreateRay(float3 origin, float3 direction) {
+	Ray ray;
+	ray.origin = origin;
+	ray.direction = direction;
+	return ray;
+}
+
+float hash11(float seed)
+{
+	return frac(sin(seed * 123.456) * 123.456);
+}
+
+// Thanks IQ
+float hash1(float2 p)
+{
+	p = 50.0 * frac(p * 0.3183099);
+	return frac(p.x * p.y * (p.x + p.y));
+}
+
+float _seed;
+float rand()
+{
+	return hash11(_seed++);
+}
+
+
+Ray CreateCameraRay(float2 uv) {
+	float3 origin = mul(_CameraToWorld, float4(0, 0, 0, 1)).xyz;
+	float3 direction = mul(_CameraInverseProjection, float4(uv, 0, 1)).xyz;
+	direction = mul(_CameraToWorld, float4(direction, 0)).xyz;
+	direction = normalize(direction);
+	return CreateRay(origin, direction);
+}
+
+float _cucube(float3 p, float3 s, float3 th)
+{
+	float3 l = abs(p) - s;
+	float cube = max(max(l.x, l.y), l.z);
+	l = abs(l) - th;
+	float x = max(l.y, l.z);
+	float y = max(l.x, l.z);
+	float z = max(l.x, l.y);
+
+	return max(min(min(x, y), z), cube);
+}
+
+float _cube(float3 p, float3 s)
+{
+	float3 l = abs(p) - s;
+	return max(l.x, max(l.y, l.z));
+}
+float4 SampleTex(Texture2D tex, float2 uv)
+{
+	return tex.SampleLevel(samplerConcrete, uv, 0);
+}
+float2 map(float3 p)
+{
+	float2 acc = float2(10000.f,-1.0f);
+
+	acc = _min(acc, float2(-_cube(p, float3(2., 2., 15.)), 0.));
+	acc = _min(acc, float2(_cube(p-float3(0.,0.,4.5), float3(2., 2., .1)), 1.));
+	acc = _min(acc, float2(length(p - float3(sin(_Time.y), sin(_Time.y*2.)*.5+.5, 3.5-(sin(_Time.y*3.3) * .5 + .5)))-.5, 2.));
+	return acc;
+	for (int i2 = 0; i2 < 7; ++i2)
+	{
+		float fi = float(i2);
+		float3 pl = p;
+		pl.xz = mul(p.xz, r2d(fi*_Time.y*.1 + _Time.y*.05));
+		pl.xy =mul(pl.xy, r2d((_Time.y*.5 - fi * .1)*2. - fi * _Time.y*.2));
+		//pl.xz *= r2d(fi+iTime*(1.+fi)*.1);
+		//p.xz *= r2d(float(i));
+		//p *= .8;
+		float cucube = _cucube(pl, 5.*float3(.5, .1, .5)*(fi / 15.), float3(1.,1.,1.)*.0001);
+		acc = _min(acc, float2(cucube, float(i2)));
+	}
+	return acc;
+	float blob = 10000.f;
+	for (int i = 0; i < 15; ++i)
+	{
+		blob = opSmoothUnion(blob, length(p - _Bubbles[i].xyz) - 0.1f, 0.02f);
+	}
+
+	blob = opSmoothUnion(blob, length(p - _LeftHandPos) - 0.1f, 0.05f);
+	blob = opSmoothUnion(blob, length(p - _RightHandPos) - 0.1f, 0.05f);
+
+	acc = _min(acc, float2(blob, 0.));
+
+	float3 p2 = p;
+	p2.x = abs(p2.x);
+	p2 = p2 - float3(1., 0., 0.);
+	float rep = 1.;
+	float zz = p2.z + _Time.y*5.;
+	p2.z = fmod(zz + rep * .5, rep) - rep * .5;
+	int idx = int(floor((zz + rep * .5) / rep));
+	idx = idx % 128;
+	float cubes = _cube(p2, float2(.1, _AudioSamples[idx].x).xyx);
+	acc = _min(acc, float2(cubes, 1.));
+	return acc;
+}
+
+float3 getNorm(float3 p, float d)
+{
+	float2 e = float2(0.01, 0.);
+	return normalize(float3(d,d,d)-float3(map(p - e.xyy).x, map(p - e.yxy).x, map(p - e.yyx).x));
+}
+float3 accCol;
+float3 trace(float3 ro, float3 rd, int steps)
+{
+	accCol = float3(0., 0., 0.);
+	float3 p = ro;
+	for (int i = 0; i < steps && distance(p, ro) < 15.; ++i)
+	{
+		float2 res = map(p);
+		if (res.x < 0.001)
+			return float3(res.x, distance(p, ro), res.y);
+		accCol += float3(1., .1, sin(p.y)*.5+.5)*(1. - saturate(res.x / .2))*.02*(pow(_AudioSamples[int(res.y)%128].x,.8)+.5);
+		p += rd * res.x;
+	}
+	return float3(-1.,-1.,-1.);
+}
+
+float3 getMat(float3 p, float3 n, float3 rd, float3 res)
+{
+	if (res.z == 1.)
+	{
+		float rep = .1;
+		float2 uvs = p.xy-float2(2.,-2.);
+		float id = floor((uvs.y + rep * .5) / rep);
+		float h = _AudioSamples[int(id * 3) % 128];
+		uvs.y = fmod(uvs.y + rep * .5, rep) - rep * .5;
+		float shape = max(abs(uvs.y) - .05, abs(uvs.x)-h*0.1);
+		return float3(1., 1., 1.) * (1.-saturate(shape * 400.));
+		return float3(1., 0., 0.)*saturate(sin((p.y+floor(_Time.y*2.))*10.)*100.);
+	}
+	if (res.z == 2.)
+		return float3(0., 0., 1.) * saturate((sin(p.y * 50. + _Time.y)-.5) * 10.);
+	return float3(0., 0., 0.);
+}
+
+float3 rdr(float2 uv)
+{
+	float3 col = float3(0.,0.,0.);
+
+	Ray ray = CreateCameraRay(uv * 2 - 1);
+
+	float3 ro = ray.origin;
+	float3 rd = ray.direction;
+
+	float3 res = trace(ro, rd, 256);
+	if (res.y > 0.)
+	{
+		float3 p = ro + res.y * rd;
+		float3 n = getNorm(p, res.x);
+		col = getMat(p, n, rd, res);
+		float gloss = pow(SampleTex(Concrete, p.xz).x,2.0)*2.0*0.4;
+		if (res.z == 2.)
+			gloss = 0.;
+		float3 refl = normalize(reflect(rd, n) + gloss*normalize(float3(rand(), rand(), rand()) - .5));
+
+		float3 resrefl = trace(p + n * 0.01, refl, 128);
+		if (resrefl.y > 0.)
+		{
+			float3 prefl = p + refl * resrefl.y;
+
+			col += getMat(prefl, 0, 0, resrefl)*.5;
+		}
+
+	}
+	//col += accCol;
+
+	return col;
+}
+
+
+
+[numthreads(8, 8, 1)]
+void CSMain(uint3 id : SV_DispatchThreadID)
+{
+	uint width, height;
+	Destination.GetDimensions(width, height);
+
+	float2 uv = id.xy / float2(width, height);
+	_seed =hash1(uv)+_Time.y;
+	// Background gradient
+	float3 col = rdr(uv);
+	//col += rand();
+	//col = float3(1., 1., 1.)*(1. - saturate((length(uv) - .5)*100.));
+	//col = Concrete.SampleLevel(samplerConcrete, uv*5., 0).xyz;
+	Destination[id.xy] = float4(saturate(col), 1.0);
+}

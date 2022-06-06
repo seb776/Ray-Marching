@@ -1555,7 +1555,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   LeftHandPos: {fileID: 1744899878}
   RightHandPos: {fileID: 1554311660}
-  fractalShader: {fileID: 7200000, guid: 61c22990e07796840b849d970de2add3, type: 3}
+  fractalShader: {fileID: 7200000, guid: 40e05a1d4140691448a3eb1e51055593, type: 3}
   MicDecode: {fileID: 346612388}
   BubblesParent: {fileID: 443281058}
   fractalPower: 10
@@ -1567,6 +1567,7 @@ MonoBehaviour:
   redB: 1
   greenB: 0
   blueB: 0
+  Concrete: {fileID: 2800000, guid: ef04dcef04c4a6c4387947d4884e951d, type: 3}
   powerIncreaseSpeed: 1.2
 --- !u!1 &1179031421
 GameObject:

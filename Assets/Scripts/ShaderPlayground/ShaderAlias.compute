@@ -71,8 +71,8 @@ float rand()
 {
 	return hash11(_seed++);
 }
-
-
+#define FFT(a) (_AudioSamples[int(abs(a)*128.)%128])
+#define PI 3.14159265
 Ray CreateCameraRay(float2 uv) {
 	float3 origin = mul(_CameraToWorld, float4(0, 0, 0, 1)).xyz;
 	float3 direction = mul(_CameraInverseProjection, float4(uv, 0, 1)).xyz;
@@ -106,10 +106,28 @@ float2 map(float3 p)
 {
 	float2 acc = float2(10000.f,-1.0f);
 
-	acc = _min(acc, float2(-_cube(p, float3(2., 2., 15.)), 0.));
+	acc = _min(acc, float2(-_cube(p, float3(2., 2., 105.)), 0.));
+	float2 an = float2(atan2(p.z, p.x), acos(p.y));
 	acc = _min(acc, float2(_cube(p-float3(0.,0.,4.5), float3(2., 2., .1)), 1.));
-	acc = _min(acc, float2(length(p - float3(sin(_Time.y), sin(_Time.y*2.)*.5+.5, 3.5-(sin(_Time.y*3.3) * .5 + .5)))-.5, 2.));
+	float rad = 0.5 + .1 * sin(an * 20. + _Time.y * 1.5) + 0.1*min(FFT(an.x*0.1)*0.1, 1.);
+	float3 pboubouble = p - float3(0., 0., 2.) - 0. * float3(sin(_Time.y), sin(_Time.y * 2.) * .5 + .5, 3.5 - (sin(_Time.y * 3.3) * .5 + .5));
+	pboubouble.xy = mul(pboubouble.xy, r2d(_Time.y));
+	pboubouble.xz = mul(pboubouble.xz, r2d(_Time.y*.33));
+	float bouboule = length(pboubouble) - rad;
+	bouboule = max(bouboule, -(length(pboubouble.xy) - .5));
+	acc = _min(acc, float2(bouboule, 2.));
+
+	float3 pc = p-float3(0.,0.,-10.);
+	float repc = 1.;
+	pc.xy = mul(pc.xy, r2d(PI * .25));
+	float idc = floor((pc.z + repc * .5) / repc);
+	pc.z = fmod(pc.z + repc * .5, repc) - repc * .5;
+
+	float cucube = _cucube(pc, float2(1.5, .01).xxy, .01);
+	acc = _min(acc, float2(cucube, 10. + abs(idc)));
+
 	return acc;
+	/*
 	for (int i2 = 0; i2 < 7; ++i2)
 	{
 		float fi = float(i2);
@@ -123,6 +141,7 @@ float2 map(float3 p)
 		acc = _min(acc, float2(cucube, float(i2)));
 	}
 	return acc;
+	*/
 	float blob = 10000.f;
 	for (int i = 0; i < 15; ++i)
 	{
@@ -152,39 +171,51 @@ float3 getNorm(float3 p, float d)
 	float2 e = float2(0.01, 0.);
 	return normalize(float3(d,d,d)-float3(map(p - e.xyy).x, map(p - e.yxy).x, map(p - e.yyx).x));
 }
-float3 accCol;
-float3 trace(float3 ro, float3 rd, int steps)
-{
-	accCol = float3(0., 0., 0.);
-	float3 p = ro;
-	for (int i = 0; i < steps && distance(p, ro) < 15.; ++i)
-	{
-		float2 res = map(p);
-		if (res.x < 0.001)
-			return float3(res.x, distance(p, ro), res.y);
-		accCol += float3(1., .1, sin(p.y)*.5+.5)*(1. - saturate(res.x / .2))*.02*(pow(_AudioSamples[int(res.y)%128].x,.8)+.5);
-		p += rd * res.x;
-	}
-	return float3(-1.,-1.,-1.);
-}
 
 float3 getMat(float3 p, float3 n, float3 rd, float3 res)
 {
 	if (res.z == 1.)
 	{
 		float rep = .1;
-		float2 uvs = p.xy-float2(2.,-2.);
+		float2 uvs = p.xy - float2(2., -2.);
 		float id = floor((uvs.y + rep * .5) / rep);
 		float h = _AudioSamples[int(id * 3) % 128];
 		uvs.y = fmod(uvs.y + rep * .5, rep) - rep * .5;
-		float shape = max(abs(uvs.y) - .05, abs(uvs.x)-h*0.1);
-		return float3(1., 1., 1.) * (1.-saturate(shape * 400.));
-		return float3(1., 0., 0.)*saturate(sin((p.y+floor(_Time.y*2.))*10.)*100.);
+		float shape = max(abs(uvs.y) - .05, abs(uvs.x) - h * 0.1);
+		return float3(1., 1., 1.) * (1. - saturate(shape * 400.));
+		return float3(1., 0., 0.) * saturate(sin((p.y + floor(_Time.y * 2.)) * 10.) * 100.);
 	}
 	if (res.z == 2.)
-		return float3(0., 0., 1.) * saturate((sin(p.y * 50. + _Time.y)-.5) * 10.);
+		return float3(0., 0., 1.) * saturate((sin(p.y * 50. + _Time.y) - .5) * 10.);
+	if (res.z > 9.)
+	{
+		float stp = 1.;
+		float val = floor(_Time.y / stp) * stp;
+		float3 rgb = lerp(float3(1., 0., 0.), float3(1., 1., 1.), saturate((fmod(res.z+_Time.y, 2.) - .5) * 100.));
+		return rgb*pow(FFT(res.z*.1+val)*.1,3.)*.5;
+
+	}
 	return float3(0., 0., 0.);
 }
+
+float3 accCol;
+float3 trace(float3 ro, float3 rd, int steps)
+{
+	accCol = float3(0., 0., 0.);
+	float3 p = ro;
+	for (int i = 0; i < steps && distance(p, ro) < 35.; ++i)
+	{
+		float2 res = map(p);
+		if (res.x < 0.001)
+			return float3(res.x, distance(p, ro), res.y);
+		if (res.y > 9.)
+			accCol += (1. - saturate(res.x / .2)) * .01 * getMat(p, normalize(float3(1., 1., 1.)), rd, float3(0., 0., res.y));
+		p += rd * res.x;
+	}
+	return float3(-1.,-1.,-1.);
+}
+
+
 
 float3 rdr(float2 uv)
 {
@@ -196,6 +227,7 @@ float3 rdr(float2 uv)
 	float3 rd = ray.direction;
 
 	float3 res = trace(ro, rd, 256);
+	float3 firstLvlAccCol = accCol;
 	if (res.y > 0.)
 	{
 		float3 p = ro + res.y * rd;
@@ -207,7 +239,7 @@ float3 rdr(float2 uv)
 		float3 refl = normalize(reflect(rd, n) + gloss*normalize(float3(rand(), rand(), rand()) - .5));
 
 		float3 resrefl = trace(p + n * 0.01, refl, 128);
-		if (resrefl.y > 0.)
+		if (resrefl.y > 0. && res.z < 9.)
 		{
 			float3 prefl = p + refl * resrefl.y;
 
@@ -215,7 +247,7 @@ float3 rdr(float2 uv)
 		}
 
 	}
-	//col += accCol;
+	col += accCol+ firstLvlAccCol;
 
 	return col;
 }

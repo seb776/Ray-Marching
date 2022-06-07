@@ -239,7 +239,7 @@ float3 rdr(float2 uv)
 		float3 refl = normalize(reflect(rd, n) + gloss*normalize(float3(rand(), rand(), rand()) - .5));
 
 		float3 resrefl = trace(p + n * 0.01, refl, 128);
-		if (resrefl.y > 0. && res.z < 9.)
+		if (resrefl.y > 0. && res.z < 9. && res.z != 1.)
 		{
 			float3 prefl = p + refl * resrefl.y;
 

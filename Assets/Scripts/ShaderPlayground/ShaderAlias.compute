@@ -4,6 +4,8 @@ RWTexture2D<float4> Destination;
 Texture2D Concrete;
 SamplerState samplerConcrete;
 
+Texture2D Intro;
+
 float4x4 _CameraToWorld;
 float4x4 _CameraInverseProjection;
 float3 _LightDirection;
@@ -16,6 +18,8 @@ float darkness;
 float blackAndWhite;
 float3 colourAMix;
 float3 colourBMix;
+
+float Visibility;
 
 static const float epsilon = 0.001f;
 static const float maxDst = 200;
@@ -221,7 +225,7 @@ float3 rdr(float2 uv)
 {
 	float3 col = float3(0.,0.,0.);
 
-	Ray ray = CreateCameraRay(uv * 2 - 1);
+	Ray ray = CreateCameraRay((uv * 2 - 1)*2.0);
 
 	float3 ro = ray.origin;
 	float3 rd = ray.direction;
@@ -267,5 +271,5 @@ void CSMain(uint3 id : SV_DispatchThreadID)
 	//col += rand();
 	//col = float3(1., 1., 1.)*(1. - saturate((length(uv) - .5)*100.));
 	//col = Concrete.SampleLevel(samplerConcrete, uv*5., 0).xyz;
-	Destination[id.xy] = float4(saturate(col), 1.0);
+	Destination[id.xy] = float4(lerp(saturate(col), SampleTex(Intro, uv), 1.0f-Visibility), 1.0);
 }

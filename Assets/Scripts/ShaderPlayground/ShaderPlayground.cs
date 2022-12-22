@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections;
 using System.Linq;
 using UnityEngine;
 
@@ -10,6 +11,10 @@ public class ShaderPlayground : MonoBehaviour {
     public ComputeShader fractalShader;
     public TestMicDecode MicDecode;
     public GameObject BubblesParent;
+
+    public Material IntroMat;
+    public float DelayBeforeFade;
+    public float FadeDuration;
 
     [Range (1, 20)]
     public float fractalPower = 10;
@@ -26,6 +31,7 @@ public class ShaderPlayground : MonoBehaviour {
 
     RenderTexture target;
     public Texture2D Concrete;
+    public Texture2D Intro;
     Camera cam;
     Light directionalLight;
 
@@ -35,7 +41,29 @@ public class ShaderPlayground : MonoBehaviour {
     void Start() {
         Application.targetFrameRate = 60;
         _bubbles = new Vector4[BubblesParent.transform.childCount];
+        StartCoroutine(_handleIntro());
     }
+
+    IEnumerator _handleIntro()
+    {
+        _computeShaderVisibility = 0.0f;
+        IntroMat.SetColor("_Color", Color.white);
+        yield return new WaitForSeconds(DelayBeforeFade);
+        float stp = 1.0f / 30.0f;
+        float duration = 0.0f;
+        while (duration < FadeDuration)
+        {
+            float f = duration / FadeDuration;
+            IntroMat.SetColor("_Color", new Color(1.0f, 1.0f, 1.0f, 1.0f-Mathf.Clamp01(f)));
+            _computeShaderVisibility = f;
+            duration += stp;
+            yield return new WaitForSeconds(stp);
+        }
+        IntroMat.SetColor("_Color", new Color(1.0f, 1.0f, 1.0f, 0.0f));
+        _computeShaderVisibility = 1.0f;
+    }
+
+    private float _computeShaderVisibility;
 
     Vector4[] _bubbles;
     
@@ -64,9 +92,11 @@ public class ShaderPlayground : MonoBehaviour {
     void SetParameters () {
         fractalShader.SetTexture(0, "Destination", target);
         fractalShader.SetTexture(0, "Concrete", Concrete);
+        fractalShader.SetTexture(0, "Intro", Intro);
         fractalShader.SetFloat ("power", (Mathf.Sin(fractalPower)*0.5f+0.5f)*3.0f+5.0f);
         fractalShader.SetFloat ("darkness", darkness);
-        fractalShader.SetFloat ("blackAndWhite", blackAndWhite);
+        fractalShader.SetFloat("blackAndWhite", blackAndWhite);
+        fractalShader.SetFloat("Visibility", _computeShaderVisibility);
         fractalShader.SetVector ("colourAMix", new Vector3 (redA, greenA, blueA));
         fractalShader.SetVector ("colourBMix", new Vector3 (redB, greenB, blueB));
 
